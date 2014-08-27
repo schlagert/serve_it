@@ -1,0 +1,15 @@
+{application, serve_it,
+ [{description, "A super simple web server application."},
+  {id, "com.github.schlagert"},
+  {vsn, "0.0.1"},
+  {registered, []},
+  {applications,
+   [
+    kernel,
+    stdlib,
+    sasl,
+    cowboy,
+    datetime
+   ]},
+  {mod, {serve_it, []}},
+  {env, []}]}.
