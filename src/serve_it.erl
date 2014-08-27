@@ -30,8 +30,6 @@
          handle/2,
          terminate/3]).
 
--define(MIME, {mimetypes, cow_mimetypes, all}).
-
 %%%=============================================================================
 %%% Application callbacks
 %%%=============================================================================
@@ -99,7 +97,8 @@ get_paths(Req, #state{base_dir = BaseDir}) ->
 %% @private
 %%------------------------------------------------------------------------------
 encode_uri(Uri) ->
-    "/" ++ string:join([http_uri:encode(U) || U <- string:tokens(Uri, "/")], "/").
+    Tokens = string:tokens(Uri, "/"),
+    [$/ | string:join([http_uri:encode(T) || T <- Tokens], "/")].
 
 %%------------------------------------------------------------------------------
 %% @private

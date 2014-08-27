@@ -2,3 +2,4 @@
 .escript
 ebin
 deps
+serve_it
