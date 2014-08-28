@@ -14,6 +14,8 @@
 %%% OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 %%%
 %%% @doc
+%%% A very simple web server based on `cowboy' to serve a configured directory
+%%% (by default the `CWD'), providing Apache-like basics like directory listing.
 %%% @end
 %%%=============================================================================
 -module(serve_it).
@@ -29,6 +31,10 @@
 -export([init/3,
          handle/2,
          terminate/3]).
+
+-define(BACK_ICO,   "ArrowTurnLeftDown.png").
+-define(FILE_ICO,   "Document.png").
+-define(FOLDER_ICO, "Folder.png").
 
 %%%=============================================================================
 %%% Application callbacks
@@ -68,7 +74,7 @@ handle(Req, State) ->
     {ok,
      case {filelib:is_file(LocalPath), filelib:is_dir(LocalPath)} of
          {true, true} ->
-             reply_html(200, dir_html(DecodedPath, LocalPath, State), Req);
+             reply_html(200, dir_html(DecodedPath, LocalPath), Req);
          {true, false} ->
              reply_file(200, LocalPath, Req);
          {false, _} ->
@@ -88,17 +94,17 @@ terminate(_Reason, _Req, #state{}) -> ok.
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-get_paths(Req, #state{base_dir = BaseDir}) ->
+get_paths(Req, State) ->
     {RawPath, Req} = cowboy_req:path(Req),
-    DecodedPath = [$/ | SubPath] = http_uri:decode(binary_to_list(RawPath)),
+    get_paths_(http_uri:decode(binary_to_list(RawPath)), State).
+get_paths_(DecodedPath = [$/ | ?BACK_ICO], _State) ->
+    {DecodedPath, filename:join([code:priv_dir(?MODULE), ?BACK_ICO])};
+get_paths_(DecodedPath = [$/ | ?FILE_ICO], _State) ->
+    {DecodedPath, filename:join([code:priv_dir(?MODULE), ?FILE_ICO])};
+get_paths_(DecodedPath = [$/ | ?FOLDER_ICO], _State) ->
+    {DecodedPath, filename:join([code:priv_dir(?MODULE), ?FOLDER_ICO])};
+get_paths_(DecodedPath = [$/ | SubPath], #state{base_dir = BaseDir}) ->
     {DecodedPath, filename:join([BaseDir, SubPath])}.
-
-%%------------------------------------------------------------------------------
-%% @private
-%%------------------------------------------------------------------------------
-encode_uri(Uri) ->
-    Tokens = string:tokens(Uri, "/"),
-    [$/ | string:join([http_uri:encode(T) || T <- Tokens], "/")].
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -141,7 +147,7 @@ reply_file(Status, FilePath, Req) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-dir_html(DecodedPath, LocalPath, State) ->
+dir_html(DecodedPath, LocalPath) ->
     [
      "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 3.2 Final//EN\">",
      "<html>",
@@ -149,11 +155,11 @@ dir_html(DecodedPath, LocalPath, State) ->
      "<body>"
      "<h1>Index of ", DecodedPath, "</h1>",
      "<table>",
-     "<tr><th>Name</th>", "<th>Last modified</th>", "<th>Size</th></tr>",
-     "<tr><th colspan=\"3\"><hr></th></tr>",
-     parent_dir_html(DecodedPath, LocalPath, State),
+     "<tr><th></th><th>Name</th><th>Last modified</th><th>Size</th></tr>",
+     "<tr><th colspan=\"4\"><hr></th></tr>",
+     parent_dir_html(DecodedPath),
      dir_entries_html(LocalPath),
-     "<tr><th colspan=\"3\"><hr></th></tr>",
+     "<tr><th colspan=\"4\"><hr></th></tr>",
      "</table>",
      server_html(),
      "</body>",
@@ -163,21 +169,17 @@ dir_html(DecodedPath, LocalPath, State) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-parent_dir_html(_DecodedPath, BaseDir, #state{base_dir = BaseDir}) ->
+parent_dir_html("/") ->
     "";
-parent_dir_html(DecodedPath, LocalPath, _State) ->
-    ParentDir = filename:dirname(LocalPath),
-    LastModified = filelib:last_modified(ParentDir),
-    ParentPath = filename:dirname(filename:absname(DecodedPath)),
+parent_dir_html(DirPath) ->
+    [_ | RestPath] = lists:reverse(string:tokens(DirPath, "/")),
+    EncRestPath = [http_uri:encode(P) || P <- lists:reverse(RestPath)],
+    ParentPath = "/" ++ [P ++ "/" || P <- EncRestPath],
     [
      "<tr>",
-     "<td><a href=\"",
-     encode_uri(ParentPath),
-     "\">Parent Directory</a></td>",
-     "<td align=\"right\">",
-     datetime:datetime_encode(LastModified, 'GMT', rss),
-     "</td>",
-     "<td align=\"right\">-</td>",
+     "<td><img src=\"/", ?BACK_ICO, "\" width=\"22\"></td>",
+     "<td><a href=\"", ParentPath, "\">Parent Directory</a></td>",
+     "<td colspan=\"2\"></td>"
      "</tr>"
     ].
 
@@ -192,21 +194,38 @@ dir_entries_html(LocalPath) ->
 %%------------------------------------------------------------------------------
 dir_entry_html(LocalPath, FileName) ->
     FilePath = filename:join([LocalPath, FileName]),
-    LastModified = filelib:last_modified(FilePath),
+    LastModifiedDate = filelib:last_modified(FilePath),
+    LastModified = datetime:datetime_encode(LastModifiedDate, 'GMT', rss),
     case filelib:is_dir(FilePath) of
         true ->
-            FileSize = "-",
-            FileLabel = FileName ++ "/";
+            dir_dir_html(FileName, LastModified);
         false ->
-            FileSize = [integer_to_list(filelib:file_size(FilePath)), "B"],
-            FileLabel = FileName
-    end,
+            dir_file_html(FileName, FilePath, LastModified)
+    end.
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+dir_dir_html(FileName, LastModified) ->
     [
      "<tr>",
-     "<td><a href=\"", http_uri:encode(FileName), "\">", FileLabel, "</a></td>",
-     "<td align=\"right\">",
-     datetime:datetime_encode(LastModified, 'GMT', rss),
-     "</td>",
+     "<td><img src=\"/", ?FOLDER_ICO, "\" width=\"22\"></td>",
+     "<td><a href=\"", http_uri:encode(FileName), "/\">", FileName, "/</a></td>",
+     "<td align=\"right\">", LastModified, "</td>",
+     "<td align=\"right\">-</td>",
+     "</tr>"
+    ].
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+dir_file_html(FileName, FilePath, LastModified) ->
+    FileSize = [integer_to_list(filelib:file_size(FilePath)), "B"],
+    [
+     "<tr>",
+     "<td><img src=\"/", ?FILE_ICO, "\"width=\"22\"></td>",
+     "<td><a href=\"", http_uri:encode(FileName), "\">", FileName, "</a></td>",
+     "<td align=\"right\">", LastModified, "</td>",
      "<td align=\"right\">", FileSize, "</td>",
      "</tr>"
     ].
