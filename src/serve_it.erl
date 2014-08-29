@@ -45,10 +45,11 @@
 %%------------------------------------------------------------------------------
 start(_StartType, _StartArgs) ->
     {ok, Cwd} = file:get_cwd(),
-    BaseDir = application:get_env(?MODULE, base_dir, Cwd),
-    Routes = cowboy_router:compile([{'_', [{"/[...]", ?MODULE, BaseDir}]}]),
+    Port = application:get_env(?MODULE, port, 8080),
+    Args = [Port, application:get_env(?MODULE, base_dir, Cwd)],
+    Routes = cowboy_router:compile([{'_', [{"/[...]", ?MODULE, Args}]}]),
     Options = [{compress, true}, {env, [{dispatch, Routes}]}],
-    cowboy:start_http(?MODULE, 10, [{port, get_port()}], Options).
+    cowboy:start_http(?MODULE, 10, [{port, Port}], Options).
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -59,12 +60,17 @@ stop(_State) -> cowboy:stop_listener(?MODULE).
 %%% cowboy_http_handler callbacks
 %%%=============================================================================
 
--record(state, {base_dir :: string()}).
+-record(state, {
+          base_dir :: file:filename(),
+          hostname :: inet:hostname(),
+          port     :: inet:port_number()}).
 
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-init({tcp, _}, Req, BaseDir) -> {ok, Req, #state{base_dir = BaseDir}}.
+init({tcp, _}, Req, [Port, BaseDir]) ->
+    {ok, Hostname} = inet:gethostname(),
+    {ok, Req, #state{base_dir = BaseDir, hostname = Hostname, port = Port}}.
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -74,11 +80,11 @@ handle(Req, State) ->
     {ok,
      case {filelib:is_file(LocalPath), filelib:is_dir(LocalPath)} of
          {true, true} ->
-             reply_html(200, dir_html(DecodedPath, LocalPath), Req);
+             reply_html(200, dir_html(DecodedPath, LocalPath, State), Req);
          {true, false} ->
              reply_file(200, LocalPath, Req);
          {false, _} ->
-             reply_html(404, not_found_html(DecodedPath), Req)
+             reply_html(404, not_found_html(DecodedPath, State), Req)
      end,
      State}.
 
@@ -109,7 +115,7 @@ get_paths_(DecodedPath = [$/ | SubPath], #state{base_dir = BaseDir}) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-not_found_html(DecodedPath) ->
+not_found_html(DecodedPath, State) ->
     [
      "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">",
      "<html>",
@@ -119,7 +125,7 @@ not_found_html(DecodedPath) ->
      "<p>The requested URL ", DecodedPath, " was not found.</p>",
      "<hr>",
      "</body>",
-     server_html(),
+     server_html(State),
      "</html>"
     ].
 
@@ -147,7 +153,7 @@ reply_file(Status, FilePath, Req) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-dir_html(DecodedPath, LocalPath) ->
+dir_html(DecodedPath, LocalPath, State) ->
     [
      "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 3.2 Final//EN\">",
      "<html>",
@@ -161,7 +167,7 @@ dir_html(DecodedPath, LocalPath) ->
      dir_entries_html(LocalPath),
      "<tr><th colspan=\"4\"><hr></th></tr>",
      "</table>",
-     server_html(),
+     server_html(State),
      "</body>",
      "</html>"
     ].
@@ -233,16 +239,10 @@ dir_file_html(FileName, FilePath, LastModified) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-server_html() ->
-    {ok, Hostname} = inet:gethostname(),
-    [Version] = [V|| {cowboy, _, V} <- application:which_applications()],
+server_html(#state{hostname = Hostname, port = Port}) ->
     [
-     "<address>Cowboy/", Version,
-     " Server at ", Hostname, " Port ", integer_to_list(get_port()),
+     "<address>Cowboy/",
+     hd([V|| {cowboy, _, V} <- application:which_applications()]),
+     " Server at ", Hostname, " Port ", integer_to_list(Port),
      "</address>"
     ].
-
-%%------------------------------------------------------------------------------
-%% @private
-%%------------------------------------------------------------------------------
-get_port() -> application:get_env(?MODULE, port, 8080).
