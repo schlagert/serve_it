@@ -32,9 +32,13 @@
          handle/2,
          terminate/3]).
 
--define(BACK_ICO,   "ArrowTurnLeftDown.png").
--define(FILE_ICO,   "Document.png").
--define(FOLDER_ICO, "Folder.png").
+-define(FOLDER_ICO, "006 Folder.png").
+-define(FILE_ICO,   "020 Document.png").
+-define(TEXT_ICO,   "021 Document Text.png").
+-define(MUSIC_ICO,  "083 Music.png").
+-define(PHOTO_ICO,  "084 Photo.png").
+-define(MOVIE_ICO,  "085 Movie.png").
+-define(BACK_ICO,   "127 ArrowLeft.png").
 
 %%%=============================================================================
 %%% Application callbacks
@@ -103,12 +107,20 @@ terminate(_Reason, _Req, #state{}) -> ok.
 get_paths(Req, State) ->
     {RawPath, Req} = cowboy_req:path(Req),
     get_paths_(http_uri:decode(binary_to_list(RawPath)), State).
-get_paths_(DecodedPath = [$/ | ?BACK_ICO], _State) ->
-    {DecodedPath, filename:join([code:priv_dir(?MODULE), ?BACK_ICO])};
-get_paths_(DecodedPath = [$/ | ?FILE_ICO], _State) ->
-    {DecodedPath, filename:join([code:priv_dir(?MODULE), ?FILE_ICO])};
 get_paths_(DecodedPath = [$/ | ?FOLDER_ICO], _State) ->
     {DecodedPath, filename:join([code:priv_dir(?MODULE), ?FOLDER_ICO])};
+get_paths_(DecodedPath = [$/ | ?FILE_ICO], _State) ->
+    {DecodedPath, filename:join([code:priv_dir(?MODULE), ?FILE_ICO])};
+get_paths_(DecodedPath = [$/ | ?TEXT_ICO], _State) ->
+    {DecodedPath, filename:join([code:priv_dir(?MODULE), ?TEXT_ICO])};
+get_paths_(DecodedPath = [$/ | ?MUSIC_ICO], _State) ->
+    {DecodedPath, filename:join([code:priv_dir(?MODULE), ?MUSIC_ICO])};
+get_paths_(DecodedPath = [$/ | ?PHOTO_ICO], _State) ->
+    {DecodedPath, filename:join([code:priv_dir(?MODULE), ?PHOTO_ICO])};
+get_paths_(DecodedPath = [$/ | ?MOVIE_ICO], _State) ->
+    {DecodedPath, filename:join([code:priv_dir(?MODULE), ?MOVIE_ICO])};
+get_paths_(DecodedPath = [$/ | ?BACK_ICO], _State) ->
+    {DecodedPath, filename:join([code:priv_dir(?MODULE), ?BACK_ICO])};
 get_paths_(DecodedPath = [$/ | SubPath], #state{base_dir = BaseDir}) ->
     {DecodedPath, filename:join([BaseDir, SubPath])}.
 
@@ -117,16 +129,16 @@ get_paths_(DecodedPath = [$/ | SubPath], #state{base_dir = BaseDir}) ->
 %%------------------------------------------------------------------------------
 not_found_html(DecodedPath, State) ->
     [
-     "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">",
-     "<html>",
-     "<head><title>404 Not Found</title></head>",
-     "<body>",
-     "<h1>Not Found</h1>",
-     "<p>The requested URL ", DecodedPath, " was not found.</p>",
-     "<hr>",
-     "</body>",
+     "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n",
+     "<html>\n",
+     "<head><title>404 Not Found</title></head>\n",
+     "<body>\n",
+     "<h1>Not Found</h1>\n",
+     "<p>The requested URL ", DecodedPath, " was not found.</p>\n",
+     "<hr>\n",
+     "</body>\n",
      server_html(State),
-     "</html>"
+     "</html>\n"
     ].
 
 %%------------------------------------------------------------------------------
@@ -155,21 +167,21 @@ reply_file(Status, FilePath, Req) ->
 %%------------------------------------------------------------------------------
 dir_html(DecodedPath, LocalPath, State) ->
     [
-     "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 3.2 Final//EN\">",
-     "<html>",
-     "<head><title>Index of ", DecodedPath, "</title></head>",
-     "<body>"
-     "<h1>Index of ", DecodedPath, "</h1>",
-     "<table>",
-     "<tr><th></th><th>Name</th><th>Last modified</th><th>Size</th></tr>",
-     "<tr><th colspan=\"4\"><hr></th></tr>",
+     "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 3.2 Final//EN\">\n",
+     "<html>\n",
+     "<head><title>Index of ", DecodedPath, "</title></head>\n",
+     "<body>\n"
+     "<h1>Index of ", DecodedPath, "</h1>\n",
+     "<table>\n",
+     "<tr><th></th><th>Name</th><th>Last modified</th><th>Size</th></tr>\n",
+     "<tr><th colspan=\"4\"><hr></th></tr>\n",
      parent_dir_html(DecodedPath),
      dir_entries_html(LocalPath),
-     "<tr><th colspan=\"4\"><hr></th></tr>",
-     "</table>",
+     "<tr><th colspan=\"4\"><hr></th></tr>\n",
+     "</table>\n",
      server_html(State),
-     "</body>",
-     "</html>"
+     "</body>\n",
+     "</html>\n"
     ].
 
 %%------------------------------------------------------------------------------
@@ -182,11 +194,11 @@ parent_dir_html(DirPath) ->
     EncRestPath = [http_uri:encode(P) || P <- lists:reverse(RestPath)],
     ParentPath = "/" ++ [P ++ "/" || P <- EncRestPath],
     [
-     "<tr>",
-     "<td><img src=\"/", ?BACK_ICO, "\" width=\"22\"></td>",
-     "<td><a href=\"", ParentPath, "\">Parent Directory</a></td>",
-     "<td colspan=\"2\"></td>"
-     "</tr>"
+     "<tr>\n",
+     "<td>", image_html(?BACK_ICO), "</td>\n",
+     "<td><a href=\"", ParentPath, "\">Parent Directory</a></td>\n",
+     "<td colspan=\"2\"></td>\n"
+     "</tr>\n"
     ].
 
 %%------------------------------------------------------------------------------
@@ -214,12 +226,12 @@ dir_entry_html(LocalPath, FileName) ->
 %%------------------------------------------------------------------------------
 dir_dir_html(FileName, LastModified) ->
     [
-     "<tr>",
-     "<td><img src=\"/", ?FOLDER_ICO, "\" width=\"22\"></td>",
-     "<td><a href=\"", http_uri:encode(FileName), "/\">", FileName, "/</a></td>",
-     "<td align=\"right\">", LastModified, "</td>",
-     "<td align=\"right\">-</td>",
-     "</tr>"
+     "<tr>\n",
+     "<td>", image_html(?FOLDER_ICO), "</td>\n",
+     "<td><a href=\"", http_uri:encode(FileName), "/\">", FileName, "/</a></td>\n",
+     "<td align=\"right\">", LastModified, "</td>\n",
+     "<td align=\"right\">-</td>\n",
+     "</tr>\n"
     ].
 
 %%------------------------------------------------------------------------------
@@ -228,12 +240,12 @@ dir_dir_html(FileName, LastModified) ->
 dir_file_html(FileName, FilePath, LastModified) ->
     FileSize = [integer_to_list(filelib:file_size(FilePath)), "B"],
     [
-     "<tr>",
-     "<td><img src=\"/", ?FILE_ICO, "\"width=\"22\"></td>",
-     "<td><a href=\"", http_uri:encode(FileName), "\">", FileName, "</a></td>",
-     "<td align=\"right\">", LastModified, "</td>",
-     "<td align=\"right\">", FileSize, "</td>",
-     "</tr>"
+     "<tr>\n",
+     "<td>", image_html(file_icon(FilePath)), "</td>\n",
+     "<td><a href=\"", http_uri:encode(FileName), "\">", FileName, "</a></td>\n",
+     "<td align=\"right\">", LastModified, "</td>\n",
+     "<td align=\"right\">", FileSize, "</td>\n",
+     "</tr>\n"
     ].
 
 %%------------------------------------------------------------------------------
@@ -244,5 +256,22 @@ server_html(#state{hostname = Hostname, port = Port}) ->
      "<address>Cowboy/",
      hd([V|| {cowboy, _, V} <- application:which_applications()]),
      " Server at ", Hostname, " Port ", integer_to_list(Port),
-     "</address>"
+     "</address>\n"
     ].
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+file_icon(FilePath) ->
+    case cow_mimetypes:all(list_to_binary(FilePath)) of
+        {<<"text">>, _, _}  -> ?TEXT_ICO;
+        {<<"video">>, _, _} -> ?MOVIE_ICO;
+        {<<"image">>, _, _} -> ?PHOTO_ICO;
+        {<<"audio">>, _, _} -> ?MUSIC_ICO;
+        _                   -> ?FILE_ICO
+    end.
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+image_html(Icon) -> ["<img src=\"/", Icon, "\" width=\"22\">"].
