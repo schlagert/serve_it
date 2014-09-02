@@ -3,7 +3,7 @@ serve_it
 
 [![Build Status](https://travis-ci.org/schlagert/serve_it.png?branch=master)](https://travis-ci.org/schlagert/serve_it)
 
-A super simple webserver based on [cowboy](https://github.com/ninenines/cowboy).
+A super simple fileserver based on [cowboy](https://github.com/ninenines/cowboy).
 Basically this application provides a `cowboy_http_handler` implementation with
 support for `range` headers, index files and (as a fallback) directory listings.
 
@@ -51,8 +51,8 @@ release. The following configuration options are implemented:
 
 * `{index_file, Basename :: string()}`
 
-  Specifies the basename of the webserver directory files to serve. The basename
-  may contain `*` as wildcard. Default is `"index.*"`.
+  Specifies the basename of the server directory index file (e.g. `index.html`).
+  The basename may contain `*` as wildcard. Default is `"index.*"`.
 
 * `{show_hidden_files, boolean()}`
 
