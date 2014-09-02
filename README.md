@@ -14,13 +14,15 @@ streaming (and of course it supports resumable downloads, think of ISOs).
 Although this project is meant to be an example for the
 [rebar_escript_plugin](https://github.com/schlagert/rebar_escript_plugin) it
 can really be a handy tool if Erlang/OTP is installed on the executing machine.
+`serveIt` needs [rebar](https://github.com/rebar/rebar) version `2.5.1` and
+[Erlang/OTP](http://erlang.org) `17.0` or newer.
 
 Get it
 ------
 
 Of course this is done the usual way:
 ```
-git clone https://github.com/schlagert/serve_it.git
+$ git clone https://github.com/schlagert/serve_it.git
 ```
 
 Build it
@@ -29,9 +31,9 @@ Build it
 It is intended to issue the `compile` command twice. Unfortunately this is
 needed when initially cloning dependencies. This is not needed when recompiling.
 ```
-rebar get-deps
-rebar compile
-rebar compile
+$ rebar get-deps
+$ rebar compile
+$ rebar compile
 ```
 
 Configure it (optional)
