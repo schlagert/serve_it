@@ -14,7 +14,7 @@ streaming (and of course it supports resumable downloads, think of ISOs).
 Although this project is meant to be an example for the
 [rebar_escript_plugin](https://github.com/schlagert/rebar_escript_plugin) it
 can really be a handy tool if Erlang/OTP is installed on the executing machine.
-`serveIt` needs [rebar](https://github.com/rebar/rebar) version `2.5.1` and
+`serve_it` needs [rebar](https://github.com/rebar/rebar) version `2.5.1` and
 [Erlang/OTP](http://erlang.org) `17.0` or newer.
 
 Get it
