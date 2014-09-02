@@ -15,7 +15,16 @@
 %%%
 %%% @doc
 %%% A very simple web server based on `cowboy' to serve a configured directory
-%%% (by default the `CWD'), providing Apache-like basics like directory listing.
+%%% (by default the `CWD'), providing Apache-like basics like directory listing,
+%%% `range' header (aka file streaming) and index file (aka `index.html')
+%%% support.
+%%%
+%%% Configuration (application environment):
+%%% * port (integer): server listen port (default 8080)
+%%% * base_dir (string): webserver root directory (default c:pwd())
+%%% * index_file (string): basename of index file (default "index.*")
+%%% * show_hidden_files (boolean): show hidden files/directories, hidden means
+%%%   the name starts with a dot (default false)
 %%% @end
 %%%=============================================================================
 -module(serve_it).
@@ -81,16 +90,21 @@ init({tcp, _}, Req, [Port, BaseDir]) ->
 %%------------------------------------------------------------------------------
 handle(Req, State) ->
     {DecodedPath, LocalPath} = get_paths(Req, State),
-    {ok,
-     case {filelib:is_file(LocalPath), filelib:is_dir(LocalPath)} of
-         {true, true} ->
-             reply_html(200, dir_html(DecodedPath, LocalPath, State), Req);
-         {true, false} ->
-             reply_file(200, LocalPath, Req);
-         {false, _} ->
-             reply_html(404, not_found_html(DecodedPath, State), Req)
-     end,
-     State}.
+    {ok, NewReq} =
+        case {filelib:is_file(LocalPath), filelib:is_dir(LocalPath)} of
+            {true, true} ->
+                case has_index_file(LocalPath) of
+                    {true, IndexFile} ->
+                        reply_file(IndexFile, Req);
+                    false ->
+                        reply_html(200, dir_html(DecodedPath, LocalPath, State), Req)
+                end;
+            {true, false} ->
+                reply_file(LocalPath, Req);
+            {false, _} ->
+                reply_html(404, not_found_html(DecodedPath, State), Req)
+        end,
+    {ok, NewReq, State}.
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -103,6 +117,8 @@ terminate(_Reason, _Req, #state{}) -> ok.
 
 %%------------------------------------------------------------------------------
 %% @private
+%% Returns a tuple containing the decoded request path as well as its
+%% corresponding path on disk.
 %%------------------------------------------------------------------------------
 get_paths(Req, State) ->
     {RawPath, Req} = cowboy_req:path(Req),
@@ -127,6 +143,19 @@ get_paths_(DecodedPath = [$/ | SubPath], #state{base_dir = BaseDir}) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
+has_index_file(LocalPath) ->
+    Index = application:get_env(?MODULE, index_file, "index.*"),
+    case filelib:wildcard(filename:join(LocalPath, Index)) of
+        [IndexFile | _] ->
+            {true, IndexFile};
+        [] ->
+            false
+    end.
+
+%%------------------------------------------------------------------------------
+%% @private
+%% The markup returned on 404.
+%%------------------------------------------------------------------------------
 not_found_html(DecodedPath, State) ->
     [
      "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n",
@@ -143,27 +172,69 @@ not_found_html(DecodedPath, State) ->
 
 %%------------------------------------------------------------------------------
 %% @private
+%% Sends a response containing HTML markup.
 %%------------------------------------------------------------------------------
 reply_html(Status, Html, Req) ->
     Headers = [{<<"content-type">>, <<"text/html">>}],
     Resp = iolist_to_binary(Html),
-    {ok, Req2} = cowboy_req:reply(Status, Headers, Resp, Req),
-    Req2.
+    cowboy_req:reply(Status, Headers, Resp, Req).
 
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-reply_file(Status, FilePath, Req) ->
+reply_file(FilePath, Req0) ->
     FileSize = filelib:file_size(FilePath),
-    Fun = fun(Socket, Transport) -> Transport:sendfile(Socket, FilePath) end,
-    Req2 = cowboy_req:set_resp_body_fun(FileSize, Fun, Req),
-    {Type, SubType, []} = cow_mimetypes:all(list_to_binary(FilePath)),
-    Headers = [{<<"content-type">>, <<Type/binary, $/, SubType/binary>>}],
-    {ok, Req3} = cowboy_req:reply(Status, Headers, Req2),
-    Req3.
+    case cowboy_req:header(<<"range">>, Req0) of
+        {Range, Req0} when Range =:= undefined; Range =:= <<>> ->
+            Req1 = set_resp_body_fun(FileSize, FilePath, Req0),
+            Headers = file_headers(FileSize, FilePath),
+            cowboy_req:reply(200, Headers, Req1);
+        {<<"bytes=", Range/binary>>, Req0} ->
+            case split_range(Range) of
+                [F] when F >= 0, F < FileSize ->
+                    L = FileSize - 1;
+                [F, L] when F >= 0, L > 0, L < FileSize, F < L ->
+                    ok
+            end,
+            Req1 = set_resp_body_fun(F, L - F + 1, FilePath, Req0),
+            Headers = file_headers(F, L, FileSize, FilePath),
+            cowboy_req:reply(206, Headers, Req1)
+    end.
 
 %%------------------------------------------------------------------------------
 %% @private
+%%------------------------------------------------------------------------------
+split_range(Range) ->
+    [list_to_integer(I) || I <- string:tokens(binary_to_list(Range), "-")].
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+set_resp_body_fun(Size, FilePath, Req) ->
+    Fun = fun(S, T) -> T:sendfile(S, FilePath) end,
+    cowboy_req:set_resp_body_fun(Size, Fun, Req).
+set_resp_body_fun(First, Size, FilePath, Req) ->
+    Fun = fun(S, T) -> T:sendfile(S, FilePath, First, Size, []) end,
+    cowboy_req:set_resp_body_fun(Size, Fun, Req).
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+file_headers(Size, Path) ->
+    file_headers(0, Size - 1, Size, Path).
+file_headers(First, Last, Size, Path) ->
+    {Type, SubType, []} = cow_mimetypes:all(list_to_binary(Path)),
+    [{<<"content-type">>, <<Type/binary, $/, SubType/binary>>},
+     {<<"content-length">>, integer_to_binary(Last - First + 1)},
+     {<<"accept-ranges">>, <<"bytes">>},
+     {<<"content-range">>, <<"bytes ",
+                             (integer_to_binary(First))/binary, $-,
+                             (integer_to_binary(Last))/binary, $/,
+                             (integer_to_binary(Size))/binary>>}].
+
+%%------------------------------------------------------------------------------
+%% @private
+%% The markup returned when requesting a directory path.
 %%------------------------------------------------------------------------------
 dir_html(DecodedPath, LocalPath, State) ->
     [
@@ -186,6 +257,7 @@ dir_html(DecodedPath, LocalPath, State) ->
 
 %%------------------------------------------------------------------------------
 %% @private
+%% The markup for the parent directory link.
 %%------------------------------------------------------------------------------
 parent_dir_html("/") ->
     "";
@@ -205,12 +277,16 @@ parent_dir_html(DirPath) ->
 %% @private
 %%------------------------------------------------------------------------------
 dir_entries_html(LocalPath) ->
-    [dir_entry_html(LocalPath, F) || F <- filelib:wildcard("*", LocalPath)].
+    Files = filelib:wildcard("*", LocalPath),
+    ShowHidden = application:get_env(?MODULE, show_hidden_files, false),
+    [dir_entry_html(ShowHidden, LocalPath, F) || F <- Files].
 
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-dir_entry_html(LocalPath, FileName) ->
+dir_entry_html(false, _LocalPath, [$. | _]) ->
+    "";
+dir_entry_html(_ShowHidden, LocalPath, FileName) ->
     FilePath = filename:join([LocalPath, FileName]),
     LastModifiedDate = filelib:last_modified(FilePath),
     LastModified = datetime:datetime_encode(LastModifiedDate, 'GMT', rss),
@@ -223,6 +299,7 @@ dir_entry_html(LocalPath, FileName) ->
 
 %%------------------------------------------------------------------------------
 %% @private
+%% The markup for a directory entry in the directory listing.
 %%------------------------------------------------------------------------------
 dir_dir_html(FileName, LastModified) ->
     [
@@ -236,6 +313,7 @@ dir_dir_html(FileName, LastModified) ->
 
 %%------------------------------------------------------------------------------
 %% @private
+%% The markup for a file entry in the directory listing.
 %%------------------------------------------------------------------------------
 dir_file_html(FileName, FilePath, LastModified) ->
     FileSize = [integer_to_list(filelib:file_size(FilePath)), "B"],
@@ -250,6 +328,7 @@ dir_file_html(FileName, FilePath, LastModified) ->
 
 %%------------------------------------------------------------------------------
 %% @private
+%% The markup for the server footer.
 %%------------------------------------------------------------------------------
 server_html(#state{hostname = Hostname, port = Port}) ->
     [
@@ -261,6 +340,7 @@ server_html(#state{hostname = Hostname, port = Port}) ->
 
 %%------------------------------------------------------------------------------
 %% @private
+%% Returns an icon based on the detected MIME type of a file path.
 %%------------------------------------------------------------------------------
 file_icon(FilePath) ->
     case cow_mimetypes:all(list_to_binary(FilePath)) of
@@ -273,5 +353,6 @@ file_icon(FilePath) ->
 
 %%------------------------------------------------------------------------------
 %% @private
+%% The markup for an image icon.
 %%------------------------------------------------------------------------------
 image_html(Icon) -> ["<img src=\"/", Icon, "\" width=\"22\">"].
