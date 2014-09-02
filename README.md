@@ -70,4 +70,5 @@ fully relocatable. Copy the script somewhere into your path or onto another
 machine (maybe even a Windows machine, didn't try it yet) and call it from the
 directory you want to serve. Done!
 
-To browse your directory, fire up a browser and visit [localhost:8080](localhost:8080).
+To browse your directory, fire up a browser and visit
+[localhost:8080](http://localhost:8080).
